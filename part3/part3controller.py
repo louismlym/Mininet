@@ -67,11 +67,44 @@ class Part3Controller (object):
   def cores21_setup(self):
     #put core switch rules here
 
+    # hard-coded forwarding-table
+    h10 = { "nw_addr": "10.0.1.0/24", "dl_port": 1 }
+    h20 = { "nw_addr": "10.0.2.0/24", "dl_port": 2 }
+    h30 = { "nw_addr": "10.0.3.0/24", "dl_port": 3 }
+    serv1 = { "nw_addr": "10.0.4.0/24", "dl_port": 4 }
+    hnotrust1 = { "nw_addr": "172.16.10.0/24", "dl_port": 5 }
+
+    forwarding_table = [ h10, h20, h30, serv1, hnotrust1 ]
+
     # Allow ARP
-    fm = of.ofp_flow_mod()
-    fm.match.dl_type = pkt.ethernet.ARP_TYPE
-    fm.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
-    self.connection.send(fm)
+    allow_arp = of.ofp_flow_mod()
+    allow_arp.match.dl_type = pkt.ethernet.ARP_TYPE
+    allow_arp.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
+    self.connection.send(allow_arp)
+
+    # Drop ICMP from hnotrust
+    drop_icmp = of.ofp_flow_mod()
+    drop_icmp.match.in_port = hnotrust1["dl_port"]
+    drop_icmp.match.dl_type = pkt.ethernet.IP_TYPE
+    drop_icmp.match.nw_proto = pkt.ipv4.ICMP_PROTOCOL
+    drop_icmp.actions.append(of.ofp_action_output(port = of.OFPP_NONE))
+    self.connection.send(drop_icmp)
+ 
+    # Drop IP traffic from hnotrust to serv1
+    drop_ip_hnotrust_serv1 = of.ofp_flow_mod()
+    drop_ip_hnotrust_serv1.match.in_port = hnotrust1["dl_port"]
+    drop_ip_hnotrust_serv1.match.dl_type = pkt.ethernet.IP_TYPE
+    drop_ip_hnotrust_serv1.match.nw_dst = serv1["nw_addr"]
+    drop_ip_hnotrust_serv1.actions.append(of.ofp_action_output(port = of.OFPP_NONE))
+    self.connection.send(drop_ip_hnotrust_serv1)
+
+    # Otherwise forward traffic
+    for dst_host in forwarding_table:
+      forward_rule = of.ofp_flow_mod()
+      forward_rule.match.dl_type = pkt.ethernet.IP_TYPE
+      forward_rule.match.nw_dst = dst_host["nw_addr"]
+      forward_rule.actions.append(of.ofp_action_output(port = dst_host["dl_port"]))
+      self.connection.send(forward_rule)
 
   def dcs31_setup(self):
     #put datacenter switch rules here
