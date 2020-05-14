@@ -82,12 +82,11 @@ class Part3Controller (object):
     allow_arp.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
     self.connection.send(allow_arp)
 
-    # Drop ICMP from hnotrust
+    # Drop ICMP from hnotrust whenever
     drop_icmp = of.ofp_flow_mod()
     drop_icmp.match.in_port = hnotrust1["dl_port"]
     drop_icmp.match.dl_type = pkt.ethernet.IP_TYPE
     drop_icmp.match.nw_proto = pkt.ipv4.ICMP_PROTOCOL
-    drop_icmp.actions.append(of.ofp_action_output(port = of.OFPP_NONE))
     self.connection.send(drop_icmp)
  
     # Drop IP traffic from hnotrust to serv1
@@ -95,7 +94,6 @@ class Part3Controller (object):
     drop_ip_hnotrust_serv1.match.in_port = hnotrust1["dl_port"]
     drop_ip_hnotrust_serv1.match.dl_type = pkt.ethernet.IP_TYPE
     drop_ip_hnotrust_serv1.match.nw_dst = serv1["nw_addr"]
-    drop_ip_hnotrust_serv1.actions.append(of.ofp_action_output(port = of.OFPP_NONE))
     self.connection.send(drop_ip_hnotrust_serv1)
 
     # Otherwise forward traffic

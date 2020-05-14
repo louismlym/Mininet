@@ -41,7 +41,7 @@ class Firewall (object):
 
     # Drop other by default
     fm = of.ofp_flow_mod()
-    fm.actions.append(of.ofp_action_output(port = of.OFPP_NONE))
+    fm.match.dl_type = pkt.ethernet.IP_TYPE
 
     connection.send(fm)
 

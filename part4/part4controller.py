@@ -52,6 +52,14 @@ class Part3Controller (object):
     fm.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
     self.connection.send(fm)
 
+  def update_rules(self, nw_dst, dl_port, dl_addr):
+    forward_rule = of.ofp_flow_mod()
+    forward_rule.match.dl_type = pkt.ethernet.IP_TYPE
+    forward_rule.match.nw_dst = nw_dst
+    forward_rule.actions.append(of.ofp_action_dl_addr.set_dst(dl_addr))
+    forward_rule.actions.append(of.ofp_action_output(port = dl_port))
+    self.connection.send(forward_rule)
+
   def s1_setup(self):
     #put switch 1 rules here
     self.addDefaultFlood()
@@ -67,11 +75,19 @@ class Part3Controller (object):
   def cores21_setup(self):
     #put core switch rules here
 
-    # Allow ARP
-    fm = of.ofp_flow_mod()
-    fm.match.dl_type = pkt.ethernet.ARP_TYPE
-    fm.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
-    self.connection.send(fm)
+    # Drop ICMP from hnotrust whenever
+    drop_icmp = of.ofp_flow_mod()
+    drop_icmp.match.nw_src = "172.16.10.0/24"
+    drop_icmp.match.dl_type = pkt.ethernet.IP_TYPE
+    drop_icmp.match.nw_proto = pkt.ipv4.ICMP_PROTOCOL
+    self.connection.send(drop_icmp)
+
+    # Drop IP traffic from hnotrust to serv1
+    drop_ip_hnotrust_serv1 = of.ofp_flow_mod()
+    drop_ip_hnotrust_serv1.match.nw_src = "172.16.10.0/24"
+    drop_ip_hnotrust_serv1.match.dl_type = pkt.ethernet.IP_TYPE
+    drop_ip_hnotrust_serv1.match.nw_dst = "10.0.4.0/24"
+    self.connection.send(drop_ip_hnotrust_serv1)
 
   def dcs31_setup(self):
     #put datacenter switch rules here
@@ -99,7 +115,24 @@ class Part3Controller (object):
       return
 
     packet_in = event.ofp # The actual ofp_packet_in message.
-    print ("Unhandled packet from " + str(self.connection.dpid) + ":" + packet.dump())
+
+    if packet.type == packet.ARP_TYPE:
+      if packet.payload.opcode == pkt.arp.REQUEST:
+        self.update_rules(packet.payload.protosrc, event.port, packet.src)
+        arp_reply = pkt.arp()
+        arp_reply.hwsrc = EthAddr(b"\x00\x00\x00\x23\x51\x00")
+        arp_reply.hwdst = packet.src
+        arp_reply.opcode = pkt.arp.REPLY
+        arp_reply.protosrc = packet.payload.protodst
+        arp_reply.protodst = packet.payload.protosrc
+        ether = pkt.ethernet()
+        ether.type = pkt.ethernet.ARP_TYPE
+        ether.src = EthAddr(b"\x00\x00\x00\x23\x51\x00")
+        ether.dst = packet.src
+        ether.payload = arp_reply
+        self.resend_packet(ether, packet_in.in_port)
+    else:
+      print ("Unhandled packet from " + str(self.connection.dpid) + ":" + packet.dump())
 
 def launch ():
   """
